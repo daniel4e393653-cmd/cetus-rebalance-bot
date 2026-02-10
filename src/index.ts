@@ -86,6 +86,9 @@ class CetusRebalanceBot {
   private currentRpcIndex: number = 0;
   private poolCache: Map<string, { pool: Pool; timestamp: number }> = new Map();
   private readonly POOL_CACHE_TTL = 5000; // 5 seconds cache
+  private readonly TRANSACTION_TIMEOUT_MS = 15000; // 15 seconds timeout per transaction
+  private readonly MAX_TRANSACTION_RETRIES = 3; // Maximum retry attempts
+  private readonly RETRY_DELAY_MS = 1000; // Delay between retries
 
   constructor(config: RebalanceConfig) {
     this.config = config;
@@ -343,21 +346,22 @@ class CetusRebalanceBot {
    * - Automatically switches to the next RPC URL on each failure
    * - Logs detailed success/failure messages for each step
    * - Confirms the transaction succeeded before returning
+   * 
+   * Note: Timed-out transactions may still complete on-chain as blockchain transactions
+   * cannot be cancelled once submitted to the network.
    */
   private async signAndExecuteTransactionBlockCompat(
     tx: Transaction,
     options: SuiTransactionBlockResponseOptions = { showEffects: true, showEvents: true }
   ): Promise<SuiTransactionBlockResponse> {
-    const maxRetries = 3;
-    const timeoutMs = 15000; // 15 seconds
     let lastError: any;
 
-    for (let attempt = 0; attempt < maxRetries; attempt++) {
+    for (let attempt = 0; attempt < this.MAX_TRANSACTION_RETRIES; attempt++) {
       try {
-        logger.debug(`Transaction attempt ${attempt + 1}/${maxRetries}`);
+        logger.debug(`Transaction attempt ${attempt + 1}/${this.MAX_TRANSACTION_RETRIES}`);
         
         // Execute transaction with timeout
-        const result = await this.executeTransactionWithTimeout(tx, options, timeoutMs);
+        const result = await this.executeTransactionWithTimeout(tx, options, this.TRANSACTION_TIMEOUT_MS);
         
         // Validate transaction result
         this.validateTransactionResult(result, 'Transaction execution failed');
@@ -373,31 +377,35 @@ class CetusRebalanceBot {
       } catch (error) {
         lastError = error;
         const errorMsg = error instanceof Error ? error.message : String(error);
-        logger.warn(`✗ Transaction attempt ${attempt + 1}/${maxRetries} failed: ${errorMsg}`);
+        logger.warn(`✗ Transaction attempt ${attempt + 1}/${this.MAX_TRANSACTION_RETRIES} failed: ${errorMsg}`);
         
         if (error instanceof Error && error.stack) {
           logger.debug(`Error stack: ${error.stack}`);
         }
         
         // Switch to next RPC on failure (except for last attempt)
-        if (attempt < maxRetries - 1) {
+        if (attempt < this.MAX_TRANSACTION_RETRIES - 1) {
           this.switchToNextRpc();
           logger.info(`Retrying with next RPC endpoint...`);
           
-          // Wait a bit before retry
-          await new Promise(resolve => setTimeout(resolve, 1000));
+          // Wait before retry
+          await new Promise(resolve => setTimeout(resolve, this.RETRY_DELAY_MS));
         }
       }
     }
     
     // All retries failed
     const finalError = lastError instanceof Error ? lastError.message : String(lastError);
-    logger.error(`✗ Transaction failed after ${maxRetries} attempts: ${finalError}`);
-    throw new Error(`Transaction failed after ${maxRetries} attempts: ${finalError}`);
+    logger.error(`✗ Transaction failed after ${this.MAX_TRANSACTION_RETRIES} attempts: ${finalError}`);
+    throw new Error(`Transaction failed after ${this.MAX_TRANSACTION_RETRIES} attempts: ${finalError}`);
   }
 
   /**
    * Execute transaction with timeout wrapper
+   * 
+   * Note: The timeout only affects waiting for the response. If a timeout occurs,
+   * the transaction may still complete on-chain as blockchain transactions cannot
+   * be cancelled once submitted to the network.
    */
   private async executeTransactionWithTimeout(
     tx: Transaction,
