@@ -1,6 +1,7 @@
 import { initCetusSDK, CetusClmmSDK, Position, Pool, ClmmPositionStatus } from '@cetusprotocol/cetus-sui-clmm-sdk';
 import { Ed25519Keypair } from '@mysten/sui/keypairs/ed25519';
 import { Transaction } from '@mysten/sui/transactions';
+import { SuiTransactionBlockResponse } from '@mysten/sui/client';
 import BN from 'bn.js';
 import cron from 'node-cron';
 import winston from 'winston';
@@ -350,19 +351,29 @@ class CetusRebalanceBot {
         collect_fee: true
       };
 
+      logger.debug(`Building remove liquidity transaction for position ${position.positionId}`);
       const tx = await this.sdk.Position.removeLiquidityTransactionPayload(removeLiquidityParams);
       
       // Sign and execute transaction
-      const result = await this.sdk.fullClient.sendTransaction(this.keypair, tx);
-      if (!result) {
-        throw new Error('Transaction failed: no result returned');
-      }
+      logger.debug(`Signing and executing remove liquidity transaction`);
+      const result = await this.sdk.fullClient.signAndExecuteTransaction({
+        transaction: tx,
+        signer: this.keypair,
+        options: {
+          showEffects: true,
+          showEvents: true
+        }
+      });
+      
+      // Validate transaction result
+      this.validateTransactionResult(result, 'Remove liquidity transaction failed');
+      
       logger.info(`Liquidity removed. Tx: ${result.digest}`);
       
       // Wait for transaction to be confirmed
       await this.waitForTransaction(result.digest);
     } catch (error) {
-      logger.error(`Error removing liquidity: ${error}`);
+      this.logError(`Error removing liquidity from position ${position.positionId}`, error);
       throw error;
     }
   }
@@ -391,19 +402,29 @@ class CetusRebalanceBot {
         collect_fee: true
       };
 
+      logger.debug(`Building close position transaction for position ${position.positionId}`);
       const tx = await this.sdk.Position.closePositionTransactionPayload(closePositionParams);
       
       // Sign and execute transaction
-      const result = await this.sdk.fullClient.sendTransaction(this.keypair, tx);
-      if (!result) {
-        throw new Error('Transaction failed: no result returned');
-      }
+      logger.debug(`Signing and executing close position transaction`);
+      const result = await this.sdk.fullClient.signAndExecuteTransaction({
+        transaction: tx,
+        signer: this.keypair,
+        options: {
+          showEffects: true,
+          showEvents: true
+        }
+      });
+      
+      // Validate transaction result
+      this.validateTransactionResult(result, 'Close position transaction failed');
+      
       logger.info(`Position closed. Tx: ${result.digest}`);
       
       // Wait for transaction to be confirmed
       await this.waitForTransaction(result.digest);
     } catch (error) {
-      logger.error(`Error closing position: ${error}`);
+      this.logError(`Error closing position ${position.positionId}`, error);
       throw error;
     }
   }
@@ -429,13 +450,24 @@ class CetusRebalanceBot {
         pool_id: poolId
       };
 
+      logger.debug(`Building open position transaction with range [${lowerTick}, ${upperTick}]`);
       const tx = this.sdk.Position.openPositionTransactionPayload(openPositionParams);
       
       // Sign and execute transaction
-      const result = await this.sdk.fullClient.sendTransaction(this.keypair, tx);
-      if (!result) {
-        throw new Error('Transaction failed: no result returned');
-      }
+      logger.debug(`Signing and executing open position transaction`);
+      const result = await this.sdk.fullClient.signAndExecuteTransaction({
+        transaction: tx,
+        signer: this.keypair,
+        options: {
+          showEffects: true,
+          showEvents: true,
+          showObjectChanges: true
+        }
+      });
+      
+      // Validate transaction result
+      this.validateTransactionResult(result, 'Open position transaction failed');
+      
       logger.info(`New position opened. Tx: ${result.digest}`);
       
       // Wait for transaction to be confirmed
@@ -465,7 +497,7 @@ class CetusRebalanceBot {
 
       return newPositionId;
     } catch (error) {
-      logger.error(`Error opening new position: ${error}`);
+      this.logError(`Error opening new position with range [${lowerTick}, ${upperTick}]`, error);
       throw error;
     }
   }
@@ -526,19 +558,29 @@ class CetusRebalanceBot {
         rewarder_coin_types: []
       };
 
+      logger.debug(`Building add liquidity transaction for position ${positionId}`);
       const tx = await this.sdk.Position.createAddLiquidityPayload(addLiquidityParams);
       
       // Sign and execute transaction
-      const result = await this.sdk.fullClient.sendTransaction(this.keypair, tx);
-      if (!result) {
-        throw new Error('Transaction failed: no result returned');
-      }
+      logger.debug(`Signing and executing add liquidity transaction`);
+      const result = await this.sdk.fullClient.signAndExecuteTransaction({
+        transaction: tx,
+        signer: this.keypair,
+        options: {
+          showEffects: true,
+          showEvents: true
+        }
+      });
+      
+      // Validate transaction result
+      this.validateTransactionResult(result, 'Add liquidity transaction failed');
+      
       logger.info(`Liquidity added. Tx: ${result.digest}`);
       
       // Wait for transaction to be confirmed
       await this.waitForTransaction(result.digest);
     } catch (error) {
-      logger.error(`Error adding liquidity: ${error}`);
+      this.logError(`Error adding liquidity to position ${positionId}`, error);
       throw error;
     }
   }
@@ -572,6 +614,29 @@ class CetusRebalanceBot {
     }
     
     throw new Error(`Transaction ${digest} not confirmed after ${maxAttempts} attempts`);
+  }
+
+  /**
+   * Validate transaction result and throw error if failed
+   */
+  private validateTransactionResult(result: SuiTransactionBlockResponse, context: string): void {
+    const status = result.effects?.status?.status;
+    const error = result.effects?.status?.error;
+    
+    if (status !== 'success') {
+      const errorMsg = error || 'Unknown error';
+      throw new Error(`${context}: ${errorMsg}`);
+    }
+  }
+
+  /**
+   * Log error with detailed information including stack trace
+   */
+  private logError(context: string, error: unknown): void {
+    logger.error(`${context}: ${error}`);
+    if (error instanceof Error && error.stack) {
+      logger.error(`Error stack: ${error.stack}`);
+    }
   }
 
   /**
