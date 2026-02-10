@@ -364,21 +364,15 @@ class CetusRebalanceBot {
         }
       });
       
-      // Check transaction status
-      if (result.effects?.status?.status !== 'success') {
-        const errorMsg = result.effects?.status?.error || 'Unknown error';
-        throw new Error(`Transaction failed: ${errorMsg}`);
-      }
+      // Validate transaction result
+      this.validateTransactionResult(result, 'Remove liquidity transaction failed');
       
       logger.info(`Liquidity removed. Tx: ${result.digest}`);
       
       // Wait for transaction to be confirmed
       await this.waitForTransaction(result.digest);
     } catch (error) {
-      logger.error(`Error removing liquidity from position ${position.positionId}: ${error}`);
-      if (error instanceof Error) {
-        logger.error(`Error stack: ${error.stack}`);
-      }
+      this.logError(`Error removing liquidity from position ${position.positionId}`, error);
       throw error;
     }
   }
@@ -421,21 +415,15 @@ class CetusRebalanceBot {
         }
       });
       
-      // Check transaction status
-      if (result.effects?.status?.status !== 'success') {
-        const errorMsg = result.effects?.status?.error || 'Unknown error';
-        throw new Error(`Transaction failed: ${errorMsg}`);
-      }
+      // Validate transaction result
+      this.validateTransactionResult(result, 'Close position transaction failed');
       
       logger.info(`Position closed. Tx: ${result.digest}`);
       
       // Wait for transaction to be confirmed
       await this.waitForTransaction(result.digest);
     } catch (error) {
-      logger.error(`Error closing position ${position.positionId}: ${error}`);
-      if (error instanceof Error) {
-        logger.error(`Error stack: ${error.stack}`);
-      }
+      this.logError(`Error closing position ${position.positionId}`, error);
       throw error;
     }
   }
@@ -476,11 +464,8 @@ class CetusRebalanceBot {
         }
       });
       
-      // Check transaction status
-      if (result.effects?.status?.status !== 'success') {
-        const errorMsg = result.effects?.status?.error || 'Unknown error';
-        throw new Error(`Transaction failed: ${errorMsg}`);
-      }
+      // Validate transaction result
+      this.validateTransactionResult(result, 'Open position transaction failed');
       
       logger.info(`New position opened. Tx: ${result.digest}`);
       
@@ -511,10 +496,7 @@ class CetusRebalanceBot {
 
       return newPositionId;
     } catch (error) {
-      logger.error(`Error opening new position with range [${lowerTick}, ${upperTick}]: ${error}`);
-      if (error instanceof Error) {
-        logger.error(`Error stack: ${error.stack}`);
-      }
+      this.logError(`Error opening new position with range [${lowerTick}, ${upperTick}]`, error);
       throw error;
     }
   }
@@ -589,21 +571,15 @@ class CetusRebalanceBot {
         }
       });
       
-      // Check transaction status
-      if (result.effects?.status?.status !== 'success') {
-        const errorMsg = result.effects?.status?.error || 'Unknown error';
-        throw new Error(`Transaction failed: ${errorMsg}`);
-      }
+      // Validate transaction result
+      this.validateTransactionResult(result, 'Add liquidity transaction failed');
       
       logger.info(`Liquidity added. Tx: ${result.digest}`);
       
       // Wait for transaction to be confirmed
       await this.waitForTransaction(result.digest);
     } catch (error) {
-      logger.error(`Error adding liquidity to position ${positionId}: ${error}`);
-      if (error instanceof Error) {
-        logger.error(`Error stack: ${error.stack}`);
-      }
+      this.logError(`Error adding liquidity to position ${positionId}`, error);
       throw error;
     }
   }
@@ -637,6 +613,26 @@ class CetusRebalanceBot {
     }
     
     throw new Error(`Transaction ${digest} not confirmed after ${maxAttempts} attempts`);
+  }
+
+  /**
+   * Validate transaction result and throw error if failed
+   */
+  private validateTransactionResult(result: any, context: string): void {
+    if (result.effects?.status?.status !== 'success') {
+      const errorMsg = result.effects?.status?.error || 'Unknown error';
+      throw new Error(`${context}: ${errorMsg}`);
+    }
+  }
+
+  /**
+   * Log error with detailed information including stack trace
+   */
+  private logError(context: string, error: unknown): void {
+    logger.error(`${context}: ${error}`);
+    if (error instanceof Error && error.stack) {
+      logger.error(`Error stack: ${error.stack}`);
+    }
   }
 
   /**
