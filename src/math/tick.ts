@@ -52,12 +52,12 @@ export class TickMath {
 
     const absTick = Math.abs(tickIndex);
 
-    // Start with 1.0 in Q128 format
+    // Handle bit 0 in initialization
     let ratio = (absTick & 0x1) !== 0
-      ? new BN('fffcb933bd6fad37aa2d162d1a594001', 16)
+      ? MAGIC_CONSTANTS[0][1].clone()
       : Q128_ONE.clone();
 
-    // Multiply by each magic constant for each set bit
+    // Multiply by each remaining magic constant for each set bit (bit 0 handled above)
     for (let i = 1; i < MAGIC_CONSTANTS.length; i++) {
       const [bit, constant] = MAGIC_CONSTANTS[i];
       if ((absTick & bit) !== 0) {
