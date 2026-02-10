@@ -1,0 +1,39 @@
+{
+  "name": "cetus-rebalance-bot",
+  "version": "1.0.0",
+  "description": "Light liquidity rebalance bot for Cetus on Sui Network",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "dev": "ts-node src/index.ts",
+    "watch": "tsc -w"
+  },
+  "keywords": [
+    "cetus",
+    "sui",
+    "defi",
+    "liquidity",
+    "bot",
+    "rebalance"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "@cetusprotocol/cetus-sui-clmm-sdk": "^5.4.0",
+    "@mysten/sui": "^1.0.0",
+    "bn.js": "^5.2.1",
+    "decimal.js": "^10.4.3",
+    "dotenv": "^16.4.5",
+    "winston": "^3.13.0",
+    "node-cron": "^3.0.3"
+  },
+  "devDependencies": {
+    "@types/bn.js": "^5.1.5",
+    "@types/decimal.js": "^7.4.3",
+    "@types/node": "^20.12.0",
+    "@types/node-cron": "^3.0.11",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.4.5"
+  }
+}
