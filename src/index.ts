@@ -332,7 +332,7 @@ class CetusRebalanceBot {
         false
       );
 
-      const { tokenMaxA, tokenMaxB } = adjustForCoinSlippage(
+      const { tokenMinA, tokenMinB } = adjustForCoinSlippage(
         coinAmounts,
         slippageTolerance,
         false
@@ -343,8 +343,8 @@ class CetusRebalanceBot {
         coinTypeA: position.coinTypeA,
         coinTypeB: position.coinTypeB,
         delta_liquidity: position.liquidity,
-        min_amount_a: tokenMaxA.toString(),
-        min_amount_b: tokenMaxB.toString(),
+        min_amount_a: tokenMinA.toString(),
+        min_amount_b: tokenMinB.toString(),
         pool_id: position.poolId,
         pos_id: position.positionId,
         rewarder_coin_types: [],
@@ -543,6 +543,14 @@ class CetusRebalanceBot {
         false
       );
 
+      // Estimate the correct delta_liquidity from coin amounts at the new tick range
+      const estimatedLiquidity = ClmmPoolUtil.estimateLiquidityFromcoinAmounts(
+        curSqrtPrice,
+        lowerTick,
+        upperTick,
+        coinAmounts
+      );
+
       // Build add liquidity transaction
       const addLiquidityParams = {
         coinTypeA,
@@ -551,7 +559,7 @@ class CetusRebalanceBot {
         pos_id: positionId,
         tick_lower: lowerTick.toString(),
         tick_upper: upperTick.toString(),
-        delta_liquidity: liquidity,
+        delta_liquidity: estimatedLiquidity.toString(),
         max_amount_a: tokenMaxA.toString(),
         max_amount_b: tokenMaxB.toString(),
         collect_fee: false,
