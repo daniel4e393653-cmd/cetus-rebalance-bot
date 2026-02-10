@@ -737,7 +737,9 @@ class CetusRebalanceBot {
     logger.info('=== Cetus Rebalance Bot Started ===');
 
     // Run immediately on start
-    this.checkAndRebalance();
+    this.checkAndRebalance().catch((error) => {
+      logger.error(`Error in initial checkAndRebalance: ${error}`);
+    });
 
     // Schedule periodic checks
     const intervalMs = this.config.checkIntervalSeconds * 1000;
