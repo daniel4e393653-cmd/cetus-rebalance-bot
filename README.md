@@ -11,6 +11,9 @@ A lightweight, automated liquidity rebalance bot for Cetus Protocol on the Sui N
 - **Safe Execution**: Includes slippage protection and transaction confirmation
 - **Comprehensive Logging**: Detailed logs for all operations
 - **Dry Run Mode**: Monitor-only mode for testing
+- **Multiple RPC Support**: Load balancing across multiple RPC endpoints for better performance
+- **Smart Caching**: Reduces redundant API calls with intelligent pool data caching
+- **Automatic Failover**: Automatically retries failed requests with different RPC endpoints
 
 ## Prerequisites
 
@@ -52,8 +55,9 @@ NETWORK=mainnet
 # WARNING: Never share or commit this key!
 PRIVATE_KEY=your_private_key_here
 
-# Optional: Custom RPC URL
-RPC_URL=https://fullnode.mainnet.sui.io
+# Optional: Multiple RPC URLs (comma-separated) for better performance and reliability
+# The bot will distribute requests across these endpoints and automatically retry on failure
+RPC_URLS=https://fullnode.mainnet.sui.io,https://sui-mainnet-rpc.allthatnode.com
 
 # Optional: Check interval in seconds (default: 30)
 CHECK_INTERVAL_SECONDS=30
@@ -131,11 +135,41 @@ After Rebalance:
 |----------|----------|---------|-------------|
 | `NETWORK` | Yes | - | Network to connect to (`mainnet` or `testnet`) |
 | `PRIVATE_KEY` | Yes | - | Wallet private key (64 hex chars) |
-| `RPC_URL` | No | Auto | Custom RPC endpoint |
+| `RPC_URLS` | No | Auto | Comma-separated list of RPC endpoints for load balancing and failover |
+| `RPC_URL` | No | Auto | Single RPC endpoint (deprecated, use `RPC_URLS` instead) |
 | `CHECK_INTERVAL_SECONDS` | No | 30 | How often to check positions |
 | `SLIPPAGE_PERCENT` | No | 0.5 | Slippage tolerance for transactions |
 | `REBALANCE_ENABLED` | No | true | Enable/disable actual rebalancing |
 | `LOG_LEVEL` | No | info | Logging level (debug, info, warn, error) |
+
+## Performance Optimization
+
+The bot includes several performance optimizations to improve speed and reliability:
+
+### Multiple RPC Endpoints
+
+Configure multiple RPC endpoints to distribute API load and improve reliability:
+
+```env
+RPC_URLS=https://fullnode.mainnet.sui.io,https://sui-mainnet-rpc.allthatnode.com,https://mainnet.suiet.app
+```
+
+**Benefits:**
+- **Load Distribution**: Requests are distributed across multiple endpoints using round-robin
+- **Automatic Failover**: If one RPC fails, the bot automatically retries with the next endpoint
+- **Better Uptime**: Reduces downtime from single RPC endpoint failures
+- **Faster Responses**: Multiple endpoints can provide better response times
+
+### Smart Caching
+
+The bot caches pool data for 5 seconds to reduce redundant API calls:
+- Pool data is fetched once and reused within the cache window
+- Significantly reduces the number of API calls during operations
+- Improves overall performance without sacrificing data accuracy
+
+### Retry Logic
+
+Failed API requests are automatically retried up to 3 times with different RPC endpoints, ensuring operations complete successfully even when individual RPCs are slow or unavailable.
 
 ## Getting Your Private Key
 

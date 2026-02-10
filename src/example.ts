@@ -11,7 +11,7 @@ async function example() {
   // Configuration
   const config: RebalanceConfig = {
     network: 'mainnet',
-    rpcUrl: 'https://fullnode.mainnet.sui.io',
+    rpcUrls: ['https://fullnode.mainnet.sui.io'], // Can use multiple RPCs
     privateKey: 'your_private_key_here', // Replace with your private key
     checkIntervalSeconds: 30,
     slippagePercent: 0.5,
