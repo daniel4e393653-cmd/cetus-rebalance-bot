@@ -353,10 +353,14 @@ class CetusRebalanceBot {
       const tx = await this.sdk.Position.removeLiquidityTransactionPayload(removeLiquidityParams);
       
       // Sign and execute transaction
-      const result = await this.sdk.fullClient.sendTransaction(this.keypair, tx);
-      if (!result) {
-        throw new Error('Transaction failed: no result returned');
-      }
+      const result = await this.sdk.fullClient.signAndExecuteTransaction({
+        transaction: tx,
+        signer: this.keypair,
+        options: {
+          showEffects: true,
+          showEvents: true
+        }
+      });
       logger.info(`Liquidity removed. Tx: ${result.digest}`);
       
       // Wait for transaction to be confirmed
@@ -394,10 +398,14 @@ class CetusRebalanceBot {
       const tx = await this.sdk.Position.closePositionTransactionPayload(closePositionParams);
       
       // Sign and execute transaction
-      const result = await this.sdk.fullClient.sendTransaction(this.keypair, tx);
-      if (!result) {
-        throw new Error('Transaction failed: no result returned');
-      }
+      const result = await this.sdk.fullClient.signAndExecuteTransaction({
+        transaction: tx,
+        signer: this.keypair,
+        options: {
+          showEffects: true,
+          showEvents: true
+        }
+      });
       logger.info(`Position closed. Tx: ${result.digest}`);
       
       // Wait for transaction to be confirmed
@@ -432,10 +440,15 @@ class CetusRebalanceBot {
       const tx = this.sdk.Position.openPositionTransactionPayload(openPositionParams);
       
       // Sign and execute transaction
-      const result = await this.sdk.fullClient.sendTransaction(this.keypair, tx);
-      if (!result) {
-        throw new Error('Transaction failed: no result returned');
-      }
+      const result = await this.sdk.fullClient.signAndExecuteTransaction({
+        transaction: tx,
+        signer: this.keypair,
+        options: {
+          showEffects: true,
+          showEvents: true,
+          showObjectChanges: true
+        }
+      });
       logger.info(`New position opened. Tx: ${result.digest}`);
       
       // Wait for transaction to be confirmed
@@ -529,10 +542,14 @@ class CetusRebalanceBot {
       const tx = await this.sdk.Position.createAddLiquidityPayload(addLiquidityParams);
       
       // Sign and execute transaction
-      const result = await this.sdk.fullClient.sendTransaction(this.keypair, tx);
-      if (!result) {
-        throw new Error('Transaction failed: no result returned');
-      }
+      const result = await this.sdk.fullClient.signAndExecuteTransaction({
+        transaction: tx,
+        signer: this.keypair,
+        options: {
+          showEffects: true,
+          showEvents: true
+        }
+      });
       logger.info(`Liquidity added. Tx: ${result.digest}`);
       
       // Wait for transaction to be confirmed
