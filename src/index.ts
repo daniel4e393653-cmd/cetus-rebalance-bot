@@ -399,7 +399,7 @@ class CetusRebalanceBot {
         rewarder_coin_types: rewardCoinTypes,
         pool_id: position.poolId,
         pos_id: position.positionId,
-        collect_fee: true
+        collect_fee: false
       };
 
       logger.debug(`Building close position transaction for position ${position.positionId}`);
