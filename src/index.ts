@@ -86,6 +86,9 @@ class CetusRebalanceBot {
   private currentRpcIndex: number = 0;
   private poolCache: Map<string, { pool: Pool; timestamp: number }> = new Map();
   private readonly POOL_CACHE_TTL = 5000; // 5 seconds cache
+  private readonly TRANSACTION_TIMEOUT_MS = 15000; // 15 seconds timeout per transaction
+  private readonly MAX_TRANSACTION_RETRIES = 3; // Maximum retry attempts
+  private readonly RETRY_DELAY_MS = 1000; // Delay between retries
 
   constructor(config: RebalanceConfig) {
     this.config = config;
@@ -336,11 +339,108 @@ class CetusRebalanceBot {
   }
 
   /**
-   * Sign and execute a transaction block when available, with a fallback to legacy execution.
+   * Sign and execute a transaction block with timeout, retries, and automatic RPC failover.
+   * This function:
+   * - Executes the transaction with a 15-second timeout
+   * - Retries up to 3 times if it fails or times out
+   * - Automatically switches to the next RPC URL on each failure
+   * - Logs detailed success/failure messages for each step
+   * - Confirms the transaction succeeded before returning
+   * 
+   * Note: Timed-out transactions may still complete on-chain as blockchain transactions
+   * cannot be cancelled once submitted to the network.
    */
   private async signAndExecuteTransactionBlockCompat(
     tx: Transaction,
     options: SuiTransactionBlockResponseOptions = { showEffects: true, showEvents: true }
+  ): Promise<SuiTransactionBlockResponse> {
+    let lastError: any;
+
+    for (let attempt = 0; attempt < this.MAX_TRANSACTION_RETRIES; attempt++) {
+      try {
+        logger.debug(`Transaction attempt ${attempt + 1}/${this.MAX_TRANSACTION_RETRIES}`);
+        
+        // Execute transaction with timeout
+        const result = await this.executeTransactionWithTimeout(tx, options, this.TRANSACTION_TIMEOUT_MS);
+        
+        // Validate transaction result
+        this.validateTransactionResult(result, 'Transaction execution failed');
+        
+        logger.info(`✓ Transaction succeeded: ${result.digest}`);
+        
+        // Wait for transaction confirmation
+        await this.waitForTransaction(result.digest);
+        
+        logger.info(`✓ Transaction confirmed: ${result.digest}`);
+        
+        return result;
+      } catch (error) {
+        lastError = error;
+        const errorMsg = error instanceof Error ? error.message : String(error);
+        logger.warn(`✗ Transaction attempt ${attempt + 1}/${this.MAX_TRANSACTION_RETRIES} failed: ${errorMsg}`);
+        
+        if (error instanceof Error && error.stack) {
+          logger.debug(`Error stack: ${error.stack}`);
+        }
+        
+        // Switch to next RPC on failure (except for last attempt)
+        if (attempt < this.MAX_TRANSACTION_RETRIES - 1) {
+          this.switchToNextRpc();
+          logger.info(`Retrying with next RPC endpoint...`);
+          
+          // Wait before retry
+          await new Promise(resolve => setTimeout(resolve, this.RETRY_DELAY_MS));
+        }
+      }
+    }
+    
+    // All retries failed
+    const finalError = lastError instanceof Error ? lastError.message : String(lastError);
+    logger.error(`✗ Transaction failed after ${this.MAX_TRANSACTION_RETRIES} attempts: ${finalError}`);
+    throw new Error(`Transaction failed after ${this.MAX_TRANSACTION_RETRIES} attempts: ${finalError}`);
+  }
+
+  /**
+   * Execute transaction with timeout wrapper
+   * 
+   * Note: The timeout only affects waiting for the response. If a timeout occurs,
+   * the transaction may still complete on-chain as blockchain transactions cannot
+   * be cancelled once submitted to the network.
+   */
+  private async executeTransactionWithTimeout(
+    tx: Transaction,
+    options: SuiTransactionBlockResponseOptions,
+    timeoutMs: number
+  ): Promise<SuiTransactionBlockResponse> {
+    let timeoutId: NodeJS.Timeout | null = null;
+    
+    // Create timeout promise
+    const timeoutPromise = new Promise<never>((_, reject) => {
+      timeoutId = setTimeout(() => {
+        reject(new Error(`Transaction execution timed out after ${timeoutMs}ms`));
+      }, timeoutMs);
+    });
+
+    // Create execution promise
+    const executionPromise = this.executeTransaction(tx, options);
+
+    try {
+      // Race between execution and timeout
+      return await Promise.race([executionPromise, timeoutPromise]);
+    } finally {
+      // Clean up timeout if execution completed first
+      if (timeoutId !== null) {
+        clearTimeout(timeoutId);
+      }
+    }
+  }
+
+  /**
+   * Execute transaction using the appropriate client method
+   */
+  private async executeTransaction(
+    tx: Transaction,
+    options: SuiTransactionBlockResponseOptions
   ): Promise<SuiTransactionBlockResponse> {
     const client = this.sdk.fullClient as TransactionExecutorClient;
 
@@ -416,13 +516,7 @@ class CetusRebalanceBot {
       logger.debug(`Signing and executing remove liquidity transaction`);
       const result = await this.signAndExecuteTransactionBlockCompat(tx);
       
-      // Validate transaction result
-      this.validateTransactionResult(result, 'Remove liquidity transaction failed');
-      
-      logger.info(`Liquidity removed. Tx: ${result.digest}`);
-      
-      // Wait for transaction to be confirmed
-      await this.waitForTransaction(result.digest);
+      logger.info(`Liquidity removed from position ${position.positionId}. Tx: ${result.digest}`);
     } catch (error) {
       this.logError(`Error removing liquidity from position ${position.positionId}`, error);
       throw error;
@@ -460,13 +554,7 @@ class CetusRebalanceBot {
       logger.debug(`Signing and executing close position transaction`);
       const result = await this.signAndExecuteTransactionBlockCompat(tx);
       
-      // Validate transaction result
-      this.validateTransactionResult(result, 'Close position transaction failed');
-      
-      logger.info(`Position closed. Tx: ${result.digest}`);
-      
-      // Wait for transaction to be confirmed
-      await this.waitForTransaction(result.digest);
+      logger.info(`Position ${position.positionId} closed. Tx: ${result.digest}`);
     } catch (error) {
       this.logError(`Error closing position ${position.positionId}`, error);
       throw error;
@@ -499,23 +587,13 @@ class CetusRebalanceBot {
       
       // Sign and execute transaction
       logger.debug(`Signing and executing open position transaction`);
-      const result = await this.sdk.fullClient.signAndExecuteTransaction({
-        transaction: tx,
-        signer: this.keypair,
-        options: {
-          showEffects: true,
-          showEvents: true,
-          showObjectChanges: true
-        }
+      const result = await this.signAndExecuteTransactionBlockCompat(tx, {
+        showEffects: true,
+        showEvents: true,
+        showObjectChanges: true
       });
-      
-      // Validate transaction result
-      this.validateTransactionResult(result, 'Open position transaction failed');
-      
+
       logger.info(`New position opened. Tx: ${result.digest}`);
-      
-      // Wait for transaction to be confirmed
-      await this.waitForTransaction(result.digest);
 
       // Extract position ID from transaction result
       // The position object is created and we need to find its ID
@@ -617,13 +695,7 @@ class CetusRebalanceBot {
       logger.debug(`Signing and executing add liquidity transaction`);
       const result = await this.signAndExecuteTransactionBlockCompat(tx);
       
-      // Validate transaction result
-      this.validateTransactionResult(result, 'Add liquidity transaction failed');
-      
-      logger.info(`Liquidity added. Tx: ${result.digest}`);
-      
-      // Wait for transaction to be confirmed
-      await this.waitForTransaction(result.digest);
+      logger.info(`Liquidity added to position ${positionId}. Tx: ${result.digest}`);
     } catch (error) {
       this.logError(`Error adding liquidity to position ${positionId}`, error);
       throw error;
