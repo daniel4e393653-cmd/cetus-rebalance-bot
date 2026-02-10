@@ -1,6 +1,7 @@
 import { initCetusSDK, CetusClmmSDK, Position, Pool, ClmmPositionStatus } from '@cetusprotocol/cetus-sui-clmm-sdk';
 import { Ed25519Keypair } from '@mysten/sui/keypairs/ed25519';
 import { Transaction } from '@mysten/sui/transactions';
+import { SuiTransactionBlockResponse } from '@mysten/sui/client';
 import BN from 'bn.js';
 import cron from 'node-cron';
 import winston from 'winston';
@@ -618,9 +619,12 @@ class CetusRebalanceBot {
   /**
    * Validate transaction result and throw error if failed
    */
-  private validateTransactionResult(result: any, context: string): void {
-    if (result.effects?.status?.status !== 'success') {
-      const errorMsg = result.effects?.status?.error || 'Unknown error';
+  private validateTransactionResult(result: SuiTransactionBlockResponse, context: string): void {
+    const status = result.effects?.status?.status;
+    const error = result.effects?.status?.error;
+    
+    if (status !== 'success') {
+      const errorMsg = error || 'Unknown error';
       throw new Error(`${context}: ${errorMsg}`);
     }
   }
