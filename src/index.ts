@@ -350,9 +350,11 @@ class CetusRebalanceBot {
         collect_fee: true
       };
 
+      logger.debug(`Building remove liquidity transaction for position ${position.positionId}`);
       const tx = await this.sdk.Position.removeLiquidityTransactionPayload(removeLiquidityParams);
       
       // Sign and execute transaction
+      logger.debug(`Signing and executing remove liquidity transaction`);
       const result = await this.sdk.fullClient.signAndExecuteTransaction({
         transaction: tx,
         signer: this.keypair,
@@ -361,12 +363,22 @@ class CetusRebalanceBot {
           showEvents: true
         }
       });
+      
+      // Check transaction status
+      if (result.effects?.status?.status !== 'success') {
+        const errorMsg = result.effects?.status?.error || 'Unknown error';
+        throw new Error(`Transaction failed: ${errorMsg}`);
+      }
+      
       logger.info(`Liquidity removed. Tx: ${result.digest}`);
       
       // Wait for transaction to be confirmed
       await this.waitForTransaction(result.digest);
     } catch (error) {
-      logger.error(`Error removing liquidity: ${error}`);
+      logger.error(`Error removing liquidity from position ${position.positionId}: ${error}`);
+      if (error instanceof Error) {
+        logger.error(`Error stack: ${error.stack}`);
+      }
       throw error;
     }
   }
@@ -395,9 +407,11 @@ class CetusRebalanceBot {
         collect_fee: true
       };
 
+      logger.debug(`Building close position transaction for position ${position.positionId}`);
       const tx = await this.sdk.Position.closePositionTransactionPayload(closePositionParams);
       
       // Sign and execute transaction
+      logger.debug(`Signing and executing close position transaction`);
       const result = await this.sdk.fullClient.signAndExecuteTransaction({
         transaction: tx,
         signer: this.keypair,
@@ -406,12 +420,22 @@ class CetusRebalanceBot {
           showEvents: true
         }
       });
+      
+      // Check transaction status
+      if (result.effects?.status?.status !== 'success') {
+        const errorMsg = result.effects?.status?.error || 'Unknown error';
+        throw new Error(`Transaction failed: ${errorMsg}`);
+      }
+      
       logger.info(`Position closed. Tx: ${result.digest}`);
       
       // Wait for transaction to be confirmed
       await this.waitForTransaction(result.digest);
     } catch (error) {
-      logger.error(`Error closing position: ${error}`);
+      logger.error(`Error closing position ${position.positionId}: ${error}`);
+      if (error instanceof Error) {
+        logger.error(`Error stack: ${error.stack}`);
+      }
       throw error;
     }
   }
@@ -437,9 +461,11 @@ class CetusRebalanceBot {
         pool_id: poolId
       };
 
+      logger.debug(`Building open position transaction with range [${lowerTick}, ${upperTick}]`);
       const tx = this.sdk.Position.openPositionTransactionPayload(openPositionParams);
       
       // Sign and execute transaction
+      logger.debug(`Signing and executing open position transaction`);
       const result = await this.sdk.fullClient.signAndExecuteTransaction({
         transaction: tx,
         signer: this.keypair,
@@ -449,6 +475,13 @@ class CetusRebalanceBot {
           showObjectChanges: true
         }
       });
+      
+      // Check transaction status
+      if (result.effects?.status?.status !== 'success') {
+        const errorMsg = result.effects?.status?.error || 'Unknown error';
+        throw new Error(`Transaction failed: ${errorMsg}`);
+      }
+      
       logger.info(`New position opened. Tx: ${result.digest}`);
       
       // Wait for transaction to be confirmed
@@ -478,7 +511,10 @@ class CetusRebalanceBot {
 
       return newPositionId;
     } catch (error) {
-      logger.error(`Error opening new position: ${error}`);
+      logger.error(`Error opening new position with range [${lowerTick}, ${upperTick}]: ${error}`);
+      if (error instanceof Error) {
+        logger.error(`Error stack: ${error.stack}`);
+      }
       throw error;
     }
   }
@@ -539,9 +575,11 @@ class CetusRebalanceBot {
         rewarder_coin_types: []
       };
 
+      logger.debug(`Building add liquidity transaction for position ${positionId}`);
       const tx = await this.sdk.Position.createAddLiquidityPayload(addLiquidityParams);
       
       // Sign and execute transaction
+      logger.debug(`Signing and executing add liquidity transaction`);
       const result = await this.sdk.fullClient.signAndExecuteTransaction({
         transaction: tx,
         signer: this.keypair,
@@ -550,12 +588,22 @@ class CetusRebalanceBot {
           showEvents: true
         }
       });
+      
+      // Check transaction status
+      if (result.effects?.status?.status !== 'success') {
+        const errorMsg = result.effects?.status?.error || 'Unknown error';
+        throw new Error(`Transaction failed: ${errorMsg}`);
+      }
+      
       logger.info(`Liquidity added. Tx: ${result.digest}`);
       
       // Wait for transaction to be confirmed
       await this.waitForTransaction(result.digest);
     } catch (error) {
-      logger.error(`Error adding liquidity: ${error}`);
+      logger.error(`Error adding liquidity to position ${positionId}: ${error}`);
+      if (error instanceof Error) {
+        logger.error(`Error stack: ${error.stack}`);
+      }
       throw error;
     }
   }
