@@ -87,7 +87,7 @@ function parseRpcUrls(env) {
 
 // Run tests
 console.log('🧪 Testing RPC URL Configuration Parsing\n');
-console.log('=' .repeat(70));
+console.log('='.repeat(70));
 
 let passed = 0;
 let failed = 0;
@@ -109,7 +109,7 @@ testCases.forEach((test, index) => {
   console.log('');
 });
 
-console.log('=' .repeat(70));
+console.log('='.repeat(70));
 console.log(`\n📊 Results: ${passed} passed, ${failed} failed out of ${testCases.length} tests\n`);
 
 if (failed > 0) {

@@ -683,16 +683,27 @@ async function main() {
       : ['https://fullnode.testnet.sui.io'];
   }
 
-  if (rpcUrls.length === 0) {
-    logger.error('No RPC URLs configured');
+  // Validate URLs
+  const validUrls = rpcUrls.filter(url => {
+    try {
+      new URL(url);
+      return true;
+    } catch {
+      logger.warn(`Invalid RPC URL ignored: ${url}`);
+      return false;
+    }
+  });
+
+  if (validUrls.length === 0) {
+    logger.error('No valid RPC URLs configured');
     process.exit(1);
   }
 
-  logger.info(`Configured ${rpcUrls.length} RPC endpoint(s)`);
+  logger.info(`Configured ${validUrls.length} RPC endpoint(s)`);
 
   const config: RebalanceConfig = {
     network: process.env.NETWORK as 'mainnet' | 'testnet',
-    rpcUrls,
+    rpcUrls: validUrls,
     privateKey: process.env.PRIVATE_KEY!,
     checkIntervalSeconds: parseInt(process.env.CHECK_INTERVAL_SECONDS || '30'),
     slippagePercent: parseFloat(process.env.SLIPPAGE_PERCENT || '0.5'),
