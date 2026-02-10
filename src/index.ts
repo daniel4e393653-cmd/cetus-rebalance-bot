@@ -404,9 +404,11 @@ class CetusRebalanceBot {
     options: SuiTransactionBlockResponseOptions,
     timeoutMs: number
   ): Promise<SuiTransactionBlockResponse> {
+    let timeoutId: NodeJS.Timeout | null = null;
+    
     // Create timeout promise
     const timeoutPromise = new Promise<never>((_, reject) => {
-      setTimeout(() => {
+      timeoutId = setTimeout(() => {
         reject(new Error(`Transaction execution timed out after ${timeoutMs}ms`));
       }, timeoutMs);
     });
@@ -414,8 +416,15 @@ class CetusRebalanceBot {
     // Create execution promise
     const executionPromise = this.executeTransaction(tx, options);
 
-    // Race between execution and timeout
-    return Promise.race([executionPromise, timeoutPromise]);
+    try {
+      // Race between execution and timeout
+      return await Promise.race([executionPromise, timeoutPromise]);
+    } finally {
+      // Clean up timeout if execution completed first
+      if (timeoutId !== null) {
+        clearTimeout(timeoutId);
+      }
+    }
   }
 
   /**
@@ -575,6 +584,8 @@ class CetusRebalanceBot {
         showEvents: true,
         showObjectChanges: true
       });
+
+      logger.info(`New position opened. Tx: ${result.digest}`);
 
       // Extract position ID from transaction result
       // The position object is created and we need to find its ID
