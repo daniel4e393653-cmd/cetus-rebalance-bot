@@ -186,12 +186,12 @@ The bot supports multiple private key formats for maximum compatibility:
    - Includes checksums for error detection
    - Most secure and recommended format
 
-2. **Base64 Format** - `AIUPxQveY18...`
+2. **Base64 Format** - Example: `AAAA...` (33 bytes encoded)
    - Legacy format from Sui keystore
    - 33-byte array encoded as Base64
    - First byte is the key scheme flag
 
-3. **Hex Format** - `1234abcd...` or `0x1234abcd...`
+3. **Hex Format** - Example: `1234abcd...` (64 hex characters)
    - 64 character hexadecimal string
    - Can include or omit the `0x` prefix
    - Raw 32-byte private key

@@ -65,7 +65,7 @@ function parsePrivateKey(privateKey: string): Ed25519Keypair {
       const parsed = decodeSuiPrivateKey(trimmedKey);
       return Ed25519Keypair.fromSecretKey(parsed.secretKey);
     } catch (error) {
-      logger.debug(`Failed to parse as Bech32: ${error}`);
+      logger.debug('Failed to parse as Bech32 format');
     }
   }
   
@@ -83,7 +83,7 @@ function parsePrivateKey(privateKey: string): Ed25519Keypair {
         return Ed25519Keypair.fromSecretKey(decoded);
       }
     } catch (error) {
-      logger.debug(`Failed to parse as Base64: ${error}`);
+      logger.debug('Failed to parse as Base64 format');
     }
   }
   
@@ -96,7 +96,7 @@ function parsePrivateKey(privateKey: string): Ed25519Keypair {
       return Ed25519Keypair.fromSecretKey(keyBytes);
     }
   } catch (error) {
-    logger.debug(`Failed to parse as Hex: ${error}`);
+    logger.debug('Failed to parse as Hex format');
   }
   
   // If all formats failed, throw an error with helpful message
