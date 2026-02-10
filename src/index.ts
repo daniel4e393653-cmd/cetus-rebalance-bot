@@ -89,7 +89,9 @@ function parsePrivateKey(privateKey: string): Ed25519Keypair {
   
   // Try Hex format (with or without 0x prefix)
   try {
-    const hexKey = trimmedKey.replace('0x', '');
+    const hexKey = trimmedKey.startsWith('0x') || trimmedKey.startsWith('0X') 
+      ? trimmedKey.slice(2) 
+      : trimmedKey;
     // Validate hex format (should be 64 characters for 32 bytes)
     if (hexKey.length === 64 && /^[0-9a-fA-F]+$/.test(hexKey)) {
       const keyBytes = Buffer.from(hexKey, 'hex');
