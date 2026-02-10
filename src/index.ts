@@ -1,4 +1,4 @@
-import { initCetusSDK, CetusClmmSDK, Position, Pool } from '@cetusprotocol/cetus-sui-clmm-sdk';
+import { initCetusSDK, CetusClmmSDK, Position, Pool, ClmmPositionStatus } from '@cetusprotocol/cetus-sui-clmm-sdk';
 import { Ed25519Keypair } from '@mysten/sui/keypairs/ed25519';
 import { Transaction } from '@mysten/sui/transactions';
 import BN from 'bn.js';
@@ -160,6 +160,12 @@ class CetusRebalanceBot {
 
       for (const pos of positionList) {
         try {
+          // Skip deleted or non-existent positions
+          if (pos.position_status !== ClmmPositionStatus.Exists) {
+            logger.debug(`Skipping position ${pos.pos_object_id} with status: ${pos.position_status}`);
+            continue;
+          }
+
           // Get pool info to get coin types
           const pool = await this.getPoolWithCache(pos.pool);
           
