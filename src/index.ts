@@ -29,7 +29,7 @@ const logger = winston.createLogger({
 
 interface RebalanceConfig {
   network: 'mainnet' | 'testnet';
-  rpcUrl: string;
+  rpcUrls: string[];
   privateKey: string;
   checkIntervalSeconds: number;
   slippagePercent: number;
@@ -52,14 +52,17 @@ class CetusRebalanceBot {
   private config: RebalanceConfig;
   private isRunning: boolean = false;
   private lastCheckTime: Date | null = null;
+  private currentRpcIndex: number = 0;
+  private poolCache: Map<string, { pool: Pool; timestamp: number }> = new Map();
+  private readonly POOL_CACHE_TTL = 5000; // 5 seconds cache
 
   constructor(config: RebalanceConfig) {
     this.config = config;
     
-    // Initialize SDK
+    // Initialize SDK with first RPC URL
     this.sdk = initCetusSDK({
       network: config.network,
-      fullNodeUrl: config.rpcUrl
+      fullNodeUrl: config.rpcUrls[0]
     });
 
     // Initialize keypair from private key
@@ -72,8 +75,68 @@ class CetusRebalanceBot {
     
     logger.info(`Bot initialized for address: ${this.sdk.senderAddress}`);
     logger.info(`Network: ${config.network}`);
+    logger.info(`RPC URLs configured: ${config.rpcUrls.length}`);
     logger.info(`Check interval: ${config.checkIntervalSeconds} seconds`);
     logger.info(`Rebalance enabled: ${config.rebalanceEnabled}`);
+  }
+
+  /**
+   * Get next RPC URL using round-robin
+   */
+  private getNextRpcUrl(): string {
+    const url = this.config.rpcUrls[this.currentRpcIndex];
+    this.currentRpcIndex = (this.currentRpcIndex + 1) % this.config.rpcUrls.length;
+    return url;
+  }
+
+  /**
+   * Reinitialize SDK with next RPC URL (for failover)
+   */
+  private switchToNextRpc(): void {
+    const nextUrl = this.getNextRpcUrl();
+    logger.info(`Switching to RPC: ${nextUrl}`);
+    
+    this.sdk = initCetusSDK({
+      network: this.config.network,
+      fullNodeUrl: nextUrl
+    });
+    this.sdk.senderAddress = this.keypair.getPublicKey().toSuiAddress();
+  }
+
+  /**
+   * Get pool with caching and retry logic
+   */
+  private async getPoolWithCache(poolId: string, maxRetries = 3): Promise<Pool> {
+    // Check cache first
+    const cached = this.poolCache.get(poolId);
+    if (cached && Date.now() - cached.timestamp < this.POOL_CACHE_TTL) {
+      logger.debug(`Using cached pool data for ${poolId}`);
+      return cached.pool;
+    }
+
+    // Fetch with retry logic
+    let lastError: any;
+    for (let attempt = 0; attempt < maxRetries; attempt++) {
+      try {
+        const pool = await this.sdk.Pool.getPool(poolId);
+        
+        // Cache the result
+        this.poolCache.set(poolId, { pool, timestamp: Date.now() });
+        
+        return pool;
+      } catch (error) {
+        lastError = error;
+        logger.warn(`Failed to fetch pool ${poolId} (attempt ${attempt + 1}/${maxRetries}): ${error}`);
+        
+        if (attempt < maxRetries - 1) {
+          // Switch to next RPC for retry
+          this.switchToNextRpc();
+          await new Promise(resolve => setTimeout(resolve, 1000));
+        }
+      }
+    }
+    
+    throw new Error(`Failed to fetch pool after ${maxRetries} attempts: ${lastError}`);
   }
 
   /**
@@ -98,7 +161,7 @@ class CetusRebalanceBot {
       for (const pos of positionList) {
         try {
           // Get pool info to get coin types
-          const pool = await this.sdk.Pool.getPool(pos.pool);
+          const pool = await this.getPoolWithCache(pos.pool);
           
           positions.push({
             positionId: pos.pos_object_id,
@@ -127,7 +190,7 @@ class CetusRebalanceBot {
    */
   async isPositionOutOfRange(position: PositionInfo): Promise<boolean> {
     try {
-      const pool = await this.sdk.Pool.getPool(position.poolId);
+      const pool = await this.getPoolWithCache(position.poolId);
       const currentTick = Number(pool.current_tick_index);
       
       const isInRange = currentTick >= position.tickLower && currentTick < position.tickUpper;
@@ -186,7 +249,7 @@ class CetusRebalanceBot {
     try {
       logger.info(`Starting rebalance for position ${position.positionId}`);
       
-      const pool = await this.sdk.Pool.getPool(position.poolId);
+      const pool = await this.getPoolWithCache(position.poolId);
       const currentTick = Number(pool.current_tick_index);
       const tickSpacing = Number(pool.tickSpacing);
       
@@ -242,7 +305,7 @@ class CetusRebalanceBot {
     try {
       logger.info(`Removing liquidity from position ${position.positionId}`);
       
-      const pool = await this.sdk.Pool.getPool(position.poolId);
+      const pool = await this.getPoolWithCache(position.poolId);
       const curSqrtPrice = new BN(pool.current_sqrt_price);
       const lowerSqrtPrice = TickMath.tickIndexToSqrtPriceX64(position.tickLower);
       const upperSqrtPrice = TickMath.tickIndexToSqrtPriceX64(position.tickUpper);
@@ -305,7 +368,7 @@ class CetusRebalanceBot {
     try {
       logger.info(`Closing position ${position.positionId}`);
       
-      const pool = await this.sdk.Pool.getPool(position.poolId);
+      const pool = await this.getPoolWithCache(position.poolId);
       
       // Get rewards for the position
       const rewards = await this.sdk.Rewarder.fetchPositionRewarders(pool, position.positionId);
@@ -416,7 +479,7 @@ class CetusRebalanceBot {
     try {
       logger.info(`Adding liquidity to position ${positionId}`);
       
-      const pool = await this.sdk.Pool.getPool(poolId);
+      const pool = await this.getPoolWithCache(poolId);
       const curSqrtPrice = new BN(pool.current_sqrt_price);
       const lowerSqrtPrice = TickMath.tickIndexToSqrtPriceX64(lowerTick);
       const upperSqrtPrice = TickMath.tickIndexToSqrtPriceX64(upperTick);
@@ -605,11 +668,31 @@ async function main() {
     }
   }
 
+  // Parse RPC URLs - support both comma-separated and single URL
+  let rpcUrls: string[];
+  if (process.env.RPC_URLS) {
+    // Multiple RPC URLs provided (comma-separated)
+    rpcUrls = process.env.RPC_URLS.split(',').map(url => url.trim()).filter(url => url.length > 0);
+  } else if (process.env.RPC_URL) {
+    // Single RPC URL provided (backwards compatibility)
+    rpcUrls = [process.env.RPC_URL];
+  } else {
+    // Default RPC URLs
+    rpcUrls = process.env.NETWORK === 'mainnet'
+      ? ['https://fullnode.mainnet.sui.io']
+      : ['https://fullnode.testnet.sui.io'];
+  }
+
+  if (rpcUrls.length === 0) {
+    logger.error('No RPC URLs configured');
+    process.exit(1);
+  }
+
+  logger.info(`Configured ${rpcUrls.length} RPC endpoint(s)`);
+
   const config: RebalanceConfig = {
     network: process.env.NETWORK as 'mainnet' | 'testnet',
-    rpcUrl: process.env.RPC_URL || (process.env.NETWORK === 'mainnet' 
-      ? 'https://fullnode.mainnet.sui.io' 
-      : 'https://fullnode.testnet.sui.io'),
+    rpcUrls,
     privateKey: process.env.PRIVATE_KEY!,
     checkIntervalSeconds: parseInt(process.env.CHECK_INTERVAL_SECONDS || '30'),
     slippagePercent: parseFloat(process.env.SLIPPAGE_PERCENT || '0.5'),
