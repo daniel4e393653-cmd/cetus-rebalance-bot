@@ -1,7 +1,7 @@
 import { initCetusSDK, CetusClmmSDK, Position, Pool, ClmmPositionStatus } from '@cetusprotocol/cetus-sui-clmm-sdk';
 import { Ed25519Keypair } from '@mysten/sui/keypairs/ed25519';
 import { Transaction } from '@mysten/sui/transactions';
-import { SuiTransactionBlockResponse } from '@mysten/sui/client';
+import { SuiTransactionBlockResponse, SuiTransactionBlockResponseOptions } from '@mysten/sui/client';
 import BN from 'bn.js';
 import cron from 'node-cron';
 import winston from 'winston';
@@ -46,6 +46,36 @@ interface PositionInfo {
   coinTypeA: string;
   coinTypeB: string;
 }
+
+type SignAndExecuteTransactionBlockArgs = {
+  transactionBlock: Transaction;
+  signer: Ed25519Keypair;
+  options?: SuiTransactionBlockResponseOptions;
+};
+
+type SignAndExecuteTransactionArgs = {
+  transaction: Transaction;
+  signer: Ed25519Keypair;
+  options?: SuiTransactionBlockResponseOptions;
+};
+
+type TransactionExecutorClient =
+  | {
+      signAndExecuteTransactionBlock: (
+        args: SignAndExecuteTransactionBlockArgs
+      ) => Promise<SuiTransactionBlockResponse>;
+      signAndExecuteTransaction?: (
+        args: SignAndExecuteTransactionArgs
+      ) => Promise<SuiTransactionBlockResponse>;
+    }
+  | {
+      signAndExecuteTransaction: (
+        args: SignAndExecuteTransactionArgs
+      ) => Promise<SuiTransactionBlockResponse>;
+      signAndExecuteTransactionBlock?: (
+        args: SignAndExecuteTransactionBlockArgs
+      ) => Promise<SuiTransactionBlockResponse>;
+    };
 
 class CetusRebalanceBot {
   private sdk: CetusClmmSDK;
@@ -306,6 +336,34 @@ class CetusRebalanceBot {
   }
 
   /**
+   * Sign and execute a transaction block when available, with a fallback to legacy execution.
+   */
+  private async signAndExecuteTransactionBlockCompat(
+    tx: Transaction,
+    options: SuiTransactionBlockResponseOptions = { showEffects: true, showEvents: true }
+  ): Promise<SuiTransactionBlockResponse> {
+    const client = this.sdk.fullClient as TransactionExecutorClient;
+
+    if (typeof client.signAndExecuteTransactionBlock === 'function') {
+      return client.signAndExecuteTransactionBlock({
+        transactionBlock: tx,
+        signer: this.keypair,
+        options
+      });
+    }
+
+    if (typeof client.signAndExecuteTransaction === 'function') {
+      return client.signAndExecuteTransaction({
+        transaction: tx,
+        signer: this.keypair,
+        options
+      });
+    }
+
+    throw new Error('Client does not support signAndExecuteTransactionBlock or signAndExecuteTransaction methods');
+  }
+
+  /**
    * Remove all liquidity from a position
    */
   private async removeAllLiquidity(position: PositionInfo): Promise<void> {
@@ -356,14 +414,7 @@ class CetusRebalanceBot {
       
       // Sign and execute transaction
       logger.debug(`Signing and executing remove liquidity transaction`);
-      const result = await this.sdk.fullClient.signAndExecuteTransaction({
-        transaction: tx,
-        signer: this.keypair,
-        options: {
-          showEffects: true,
-          showEvents: true
-        }
-      });
+      const result = await this.signAndExecuteTransactionBlockCompat(tx);
       
       // Validate transaction result
       this.validateTransactionResult(result, 'Remove liquidity transaction failed');
@@ -407,14 +458,7 @@ class CetusRebalanceBot {
       
       // Sign and execute transaction
       logger.debug(`Signing and executing close position transaction`);
-      const result = await this.sdk.fullClient.signAndExecuteTransaction({
-        transaction: tx,
-        signer: this.keypair,
-        options: {
-          showEffects: true,
-          showEvents: true
-        }
-      });
+      const result = await this.signAndExecuteTransactionBlockCompat(tx);
       
       // Validate transaction result
       this.validateTransactionResult(result, 'Close position transaction failed');
@@ -571,14 +615,7 @@ class CetusRebalanceBot {
       
       // Sign and execute transaction
       logger.debug(`Signing and executing add liquidity transaction`);
-      const result = await this.sdk.fullClient.signAndExecuteTransaction({
-        transaction: tx,
-        signer: this.keypair,
-        options: {
-          showEffects: true,
-          showEvents: true
-        }
-      });
+      const result = await this.signAndExecuteTransactionBlockCompat(tx);
       
       // Validate transaction result
       this.validateTransactionResult(result, 'Add liquidity transaction failed');
