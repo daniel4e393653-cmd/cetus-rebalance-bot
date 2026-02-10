@@ -1,5 +1,7 @@
 import { initCetusSDK, CetusClmmSDK, Position, Pool, ClmmPositionStatus } from '@cetusprotocol/cetus-sui-clmm-sdk';
 import { Ed25519Keypair } from '@mysten/sui/keypairs/ed25519';
+import { decodeSuiPrivateKey } from '@mysten/sui/cryptography';
+import { fromB64 } from '@mysten/sui/utils';
 import { Transaction } from '@mysten/sui/transactions';
 import BN from 'bn.js';
 import cron from 'node-cron';
@@ -46,6 +48,66 @@ interface PositionInfo {
   coinTypeB: string;
 }
 
+/**
+ * Parse a private key from multiple formats:
+ * 1. Bech32 format (suiprivkey...)
+ * 2. Base64 format (33-byte array encoded as base64)
+ * 3. Hex format (32-byte or 64-char hex string with or without 0x prefix)
+ * 
+ * Returns an Ed25519Keypair instance
+ */
+function parsePrivateKey(privateKey: string): Ed25519Keypair {
+  const trimmedKey = privateKey.trim();
+  
+  // Try Bech32 format (suiprivkey...)
+  if (trimmedKey.toLowerCase().startsWith('suiprivkey')) {
+    try {
+      const parsed = decodeSuiPrivateKey(trimmedKey);
+      return Ed25519Keypair.fromSecretKey(parsed.secretKey);
+    } catch (error) {
+      logger.debug(`Failed to parse as Bech32: ${error}`);
+    }
+  }
+  
+  // Try Base64 format (check if it looks like base64)
+  // Base64 strings are typically longer and contain +, /, = characters
+  if (trimmedKey.length > 32 && /^[A-Za-z0-9+/]+=*$/.test(trimmedKey)) {
+    try {
+      const decoded = fromB64(trimmedKey);
+      // Check if it's 33 bytes (with scheme flag) or 32 bytes (raw key)
+      if (decoded.length === 33) {
+        // First byte is the scheme flag (0x00 for Ed25519)
+        return Ed25519Keypair.fromSecretKey(decoded.slice(1));
+      } else if (decoded.length === 32) {
+        // Raw 32-byte key
+        return Ed25519Keypair.fromSecretKey(decoded);
+      }
+    } catch (error) {
+      logger.debug(`Failed to parse as Base64: ${error}`);
+    }
+  }
+  
+  // Try Hex format (with or without 0x prefix)
+  try {
+    const hexKey = trimmedKey.replace('0x', '');
+    // Validate hex format (should be 64 characters for 32 bytes)
+    if (hexKey.length === 64 && /^[0-9a-fA-F]+$/.test(hexKey)) {
+      const keyBytes = Buffer.from(hexKey, 'hex');
+      return Ed25519Keypair.fromSecretKey(keyBytes);
+    }
+  } catch (error) {
+    logger.debug(`Failed to parse as Hex: ${error}`);
+  }
+  
+  // If all formats failed, throw an error with helpful message
+  throw new Error(
+    'Invalid private key format. Supported formats:\n' +
+    '  1. Bech32: suiprivkey1... (recommended)\n' +
+    '  2. Base64: AIUPxQveY18... (33-byte with scheme flag)\n' +
+    '  3. Hex: 1234abcd... or 0x1234abcd... (64 hex characters)'
+  );
+}
+
 class CetusRebalanceBot {
   private sdk: CetusClmmSDK;
   private keypair: Ed25519Keypair;
@@ -65,10 +127,8 @@ class CetusRebalanceBot {
       fullNodeUrl: config.rpcUrls[0]
     });
 
-    // Initialize keypair from private key
-    this.keypair = Ed25519Keypair.fromSecretKey(
-      Buffer.from(config.privateKey.replace('0x', ''), 'hex')
-    );
+    // Initialize keypair from private key (supports multiple formats)
+    this.keypair = parsePrivateKey(config.privateKey);
 
     // Set sender address
     this.sdk.senderAddress = this.keypair.getPublicKey().toSuiAddress();

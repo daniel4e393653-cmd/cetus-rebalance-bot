@@ -51,7 +51,11 @@ Edit `.env` with your configuration:
 # Required: Network (mainnet or testnet)
 NETWORK=mainnet
 
-# Required: Your wallet's private key (64 character hex string)
+# Required: Your wallet's private key
+# Supports multiple formats:
+#   1. Bech32 (recommended): suiprivkey1...
+#   2. Base64: AIUPxQveY18... (33-byte encoded)
+#   3. Hex: 64 character hex string (with or without 0x prefix)
 # WARNING: Never share or commit this key!
 PRIVATE_KEY=your_private_key_here
 
@@ -134,7 +138,7 @@ After Rebalance:
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
 | `NETWORK` | Yes | - | Network to connect to (`mainnet` or `testnet`) |
-| `PRIVATE_KEY` | Yes | - | Wallet private key (64 hex chars) |
+| `PRIVATE_KEY` | Yes | - | Wallet private key (Bech32, Base64, or Hex format) |
 | `RPC_URLS` | No | Auto | Comma-separated list of RPC endpoints for load balancing and failover |
 | `RPC_URL` | No | Auto | Single RPC endpoint (deprecated, use `RPC_URLS` instead) |
 | `CHECK_INTERVAL_SECONDS` | No | 30 | How often to check positions |
@@ -173,17 +177,40 @@ Failed API requests are automatically retried up to 3 times with different RPC e
 
 ## Getting Your Private Key
 
+The bot supports multiple private key formats for maximum compatibility:
+
+### Supported Formats
+
+1. **Bech32 Format (Recommended)** - `suiprivkey1...`
+   - Modern Sui standard format
+   - Includes checksums for error detection
+   - Most secure and recommended format
+
+2. **Base64 Format** - `AIUPxQveY18...`
+   - Legacy format from Sui keystore
+   - 33-byte array encoded as Base64
+   - First byte is the key scheme flag
+
+3. **Hex Format** - `1234abcd...` or `0x1234abcd...`
+   - 64 character hexadecimal string
+   - Can include or omit the `0x` prefix
+   - Raw 32-byte private key
+
 ### From Sui Wallet (Browser Extension)
 
 1. Open Sui Wallet extension
 2. Click on your account
 3. Select "Export Private Key"
-4. Copy the private key (without `0x` prefix)
+4. Copy the private key in any of the supported formats
 
 ### From Sui CLI
 
 ```bash
+# Export in Bech32 format (recommended)
 sui keytool export --key-identity <key-alias>
+
+# Convert existing key to Bech32 format
+sui keytool convert <hex-or-base64-key>
 ```
 
 ## Security Considerations
@@ -227,8 +254,11 @@ Log levels:
 - Ensure tokens are not locked or frozen
 
 #### "Private key invalid"
-- Ensure the private key is 64 characters (hex)
-- Remove `0x` prefix if present
+- The bot now supports multiple formats: Bech32 (suiprivkey1...), Base64, and Hex
+- Ensure the private key is in one of the supported formats
+- For Bech32: Must start with `suiprivkey`
+- For Base64: Must be a valid Base64 encoded string
+- For Hex: Must be 64 characters (with or without `0x` prefix)
 - Verify the key is for the correct wallet
 
 ### Debug Mode
